@@ -11,6 +11,7 @@ app.use(bodyParser.json());
 let listOfTanksCode = [];
 let listOfTanksData =[];
 let tanksObject ={tanksName:[],tanksId:[]};
+let tankMap =new Map()
 let tanksLiveData ={setTankSubscriptionData:[]};
 let alarmListText = [];
 let alarmDate;
@@ -85,15 +86,11 @@ function wsSendAlarmAccept(smsg) {
 
 wsTankList.onopen = function(evt) {
   console.log("Connection Tanks established.");  
-    var msg = { getKslTankData: { vessel: 1 } };   
+    var msg = { "getKslTankData": { "vessel": 1 } };   
    let inte= setInterval(function(){
         wsTSend(msg); 
-    }, 200);
-   setTimeout(() => {
-    clearInterval(inte);
-    console.log('fetching tanks names done..')
-   
-   }, 3000);   
+    }, 10000);
+     
    
 };
 
@@ -103,17 +100,19 @@ wsTankList.onmessage = function(evt) {
   let kslTankData = JSON.parse(received_msg);
   //console.log(kslTankData)
   let arrayOfTanks = kslTankData.setKslTankData
-  if (  typeof arrayOfTanks === "array" ||    arrayOfTanks instanceof Array  ) {     
+  if (  typeof arrayOfTanks === "array" ||  arrayOfTanks instanceof Array  ) {     
        listOfTanksCode= arrayOfTanks.map(element => element.TankCode);
        tanksObject.tanksName=listOfTanksCode;
-    //   console.log(tanksObject.tanksName); 
+    //   console.log(tanksObject.tanksName);
+    let key =1; 
+     listOfTanksCode.forEach((tankName)=>{
+       tankMap.set(key,tankName)
+       key++;
+     })
       } 
 };
 
-wsTankList.onclose = function(){    
-   
-    console.log("Tanks name and Id Websocket is closed.....");				  
-};
+
  
 function wsTSend(smsg) {
   //var smsg = {"msg":"to server"};
@@ -140,7 +139,7 @@ wsTankLiveData.onopen = function(evt) {
 wsTankLiveData.onmessage = function(evt) {
   var received_msg = evt.data;  
    tanksLiveData = JSON.parse(received_msg);
-    //console.log(tanksLiveData)
+    console.log(tanksLiveData)
    listOfTanksData = tanksLiveData.setTankSubscriptionData; 
   if (  typeof listOfTanksData === "array" ||    listOfTanksData instanceof Array  ) {    
    /* let listOftanksId = listOfTanksData.map(element => element.tankId);
@@ -148,6 +147,8 @@ wsTankLiveData.onmessage = function(evt) {
      
       
       listOfTanksData.forEach((tankInfo)=>{
+        if(tankInfo.levelAlarm>0){
+
         
         let tankId =tankInfo.tankId;
        // console.log(tankId)
@@ -161,9 +162,9 @@ wsTankLiveData.onmessage = function(evt) {
         let alarmName ;
         let tankCode =tanksObject.tanksName[tankId-1];
         if(levelAlarm %2 == 1){
-         acknowledged =false;
+         acknowledged =0;
         }else{
-          acknowledged = true;
+          acknowledged = 1;
         }
         switch (levelAlarm) {
           case 17:
@@ -186,23 +187,25 @@ wsTankLiveData.onmessage = function(evt) {
             alarmName ='noAlarm'
               description = 'No Alarm detected.';
         } 
-        console.log('Alarm Name:'+alarmName+' tankId: '+tankId+' Acknowledged: '+acknowledged+'Description:'+description+' levelAlarm'+levelAlarm)
-        /*  mySqlConnection.query(`SELECT * FROM tanks where tank_id =${tankId}`, function (err, result, fields) {
+        let query = `INSERT INTO alarms (alarm_name, tank_id,acknowledged,alarm_description,level_alarm) VALUES ('${alarmName}'
+        ,'${tankId}','${acknowledged}','${description}','${levelAlarm}')`
+        console.log('Alarm Name:'+alarmName+' tankId: '+tankId+' Acknowledged: '+acknowledged+' Description:'+description+' levelAlarm '+levelAlarm)
+
+        /*  mySqlConnection.query(query, function (err, result, fields) {
           if (err) throw err;
-          tankCode = result[0].code_name
-          console.log(result[0].code_name);
+         
+          console.log(result);
         });*/
+      }
       })
-     
+  
 
 
  
   }
+  console.log('message ends............................')
 };
-wsTankLiveData.onclose = function(){  
-   
-  console.log("Tanks live data Websocket is closed.....");				  
-};
+
 
 function wsTankLiveDataSend(smsg) {
 //var smsg = {"msg":"to server"};
@@ -231,7 +234,33 @@ wsTankLiveData.onclose = function(){
 
 
 ///******************************************* Apis ****************************************************************************** */
-const routes = require("./routes");
+
+app.get('/levelMaster/alarmLog', (req, res) =>{
+  let alarmList=[] ;
+  mySqlConnection.query(
+    "SELECT * FROM alarms",
+    (err, result, fields) => {
+      alarmList = result;
+      for (i = 0; i < alarmList.length; i++) {
+        let stralarmDate = alarmList[i]['alarm_date'].toISOString();
+      let dayDateStr = stralarmDate.slice(0,10)
+      let timeDateStr = stralarmDate.slice(11,19)
+      let completeDate = dayDateStr + " " + timeDateStr;     
+     alarmList[i]['alarm_date']=completeDate
+    
+     alarmList[i]['tank_code']=(tankMap.get(alarmList[i]['alarm_id']))
+     console.log(alarmList[i]['tank_code'])
+      } 
+     
+      res.send(alarmList)
+    }
+  ); 
+ 
+ 
+ // res.send(alarmList)
+} )
+
+/*const routes = require("./routes");
 app.use("/api/levelMaster", routes);
 function insertDataintoDB() {
   setInterval(() => {
@@ -244,7 +273,7 @@ function insertDataintoDB() {
   }, 2000);
 }
 
-//getDatFromDB();
+//getDatFromDB();*/
 
 app.listen(3000, () => console.log(`Example app listening on port ${3000}!`));
 
